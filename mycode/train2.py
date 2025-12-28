@@ -1,13 +1,32 @@
+import sys
+from pathlib import Path
+
+# 获取当前脚本所在目录：/tmp/pycharm_project_601/mycode
+# 上两级就是项目根目录：/tmp/pycharm_project_601
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+# 把项目根目录插入到 sys.path 最前面（优先于 site-packages）
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+print(f"Using project root: {PROJECT_ROOT}")
+
+
+
 import os
 import torch
 from ultralytics import YOLO
 from datetime import datetime
 import multiprocessing
+from pathlib import Path
 #V2best
 def main():
     # ===================== 基本配置 =====================
-    model_cfg = r"E:/Desktop/yolo/HelmetDetect/ultralytics/cfg/models/11/yolo11.yaml"
-    data_yaml = r"E:/Desktop/yolo/HelmetDetect/datasets/data.yaml"
+    # 获取当前脚本的绝对路径
+    FILE = Path(__file__).resolve()
+    ROOT = FILE.parents[1]  # HelmetDetect/
+    model_cfg = ROOT / "ultralytics/cfg/models/11/yolo11.yaml"
+    data_yaml = ROOT / "datasets/data.yaml"
     epochs = 100
     batch_size = 16
     imgsz = 640
@@ -17,11 +36,11 @@ def main():
 
     # 1. 自定义项目根目录，所有训练都会保存在这里
     #    如果注释掉下面这行，YOLO会使用默认的 'runs/detect'
-    custom_project_dir = r"E:/Desktop/yolo/HelmetDetect/my_baseTraining_runs"
+    custom_project_dir = ROOT / "my_baseTraining_runs"
 
     # 2. 自定义本次实验的名称
     #timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    custom_experiment_name = "helmet_baselineV4"
+    custom_experiment_name = "WiseIou_DySample_DCNV2"
 
     model = YOLO(model_cfg)
 
@@ -43,6 +62,8 @@ def main():
             verbose=True,
             exist_ok=True,  # 如果 'name' 目录已存在，则覆盖
             resume=False,
+            amp=False,  # <--- 关闭混合精度，使用全精度训练（更稳定）
+            workers=0,  # <--- 建议设为0，防止多进程导致的数据加载崩溃
 
             # # --- 强效增强：解决“框不准”和“过拟合” ---
             # degrees = 15,  # 随机旋转 +/- 15 度
