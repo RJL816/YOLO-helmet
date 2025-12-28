@@ -12,6 +12,7 @@ from ultralytics.utils.torch_utils import autocast
 from .metrics import bbox_iou, probiou
 from .tal import bbox2dist
 
+from .iou import IouLoss
 
 class VarifocalLoss(nn.Module):
     """
@@ -90,12 +91,23 @@ class BboxLoss(nn.Module):
         """Initialize the BboxLoss module with regularization maximum and DFL settings."""
         super().__init__()
         self.dfl_loss = DFLoss(reg_max) if reg_max > 1 else None
+        #reg_max>1dfl_loss设置为DFLoss值否则设置为空
+        self.wiou_loss = IouLoss(ltype='WIoU', monotonous=False)  # monotonous=False 为动态非单调FM (v3)
 
+
+    #前向传播方法
     def forward(self, pred_dist, pred_bboxes, anchor_points, target_bboxes, target_scores, target_scores_sum, fg_mask):
         """Compute IoU and DFL losses for bounding boxes."""
         weight = target_scores.sum(-1)[fg_mask].unsqueeze(-1)
-        iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
-        loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
+        # iou = bbox_iou(pred_bboxes[fg_mask], target_bboxes[fg_mask], xywh=False, CIoU=True)
+        # loss_iou = ((1.0 - iou) * weight).sum() / target_scores_sum
+
+        #用WIoU计算损失（返回scaled损失，不是iou）
+        if fg_mask.sum() > 0:  # 有正样本
+            self.wiou_loss.train()  # 训练模式，更新iou_mean
+            loss_iou = self.wiou_loss(pred_bboxes[fg_mask], target_bboxes[fg_mask]).sum() / target_scores_sum
+        else:
+            loss_iou = torch.tensor(0.0).to(pred_dist.device)
 
         # DFL loss
         if self.dfl_loss:

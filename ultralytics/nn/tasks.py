@@ -86,6 +86,9 @@ from ultralytics.utils.torch_utils import (
     time_sync,
 )
 
+
+from .modules.dysample import DySample
+
 try:
     import thop
 except ImportError:
@@ -1131,6 +1134,7 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             SCDown,
             C2fCIB,
             A2C2f,
+            
         }
     )
     repeat_modules = frozenset(  # modules with 'repeat' arguments
@@ -1150,9 +1154,12 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
             C2fCIB,
             C2PSA,
             A2C2f,
+
         }
     )
     for i, (f, n, m, args) in enumerate(d["backbone"] + d["head"]):  # from, number, module, args
+        #将backbone和head两个列表保存为一个新的列表，并且遍历循环，n：层数量或重复次数，m：模块类型名称
+        # args：传递给模块的参数
         m = (
             getattr(torch.nn, m[3:])
             if "nn." in m
@@ -1187,6 +1194,11 @@ def parse_model(d, ch, verbose=True):  # model_dict, input_channels(3)
                     args.extend((True, 1.2))
         elif m is AIFI:
             args = [ch[f], *args]
+
+        #新增dysampel模块
+        elif m is DySample:
+            args = [ch[f], *args]
+
         elif m in frozenset({HGStem, HGBlock}):
             c1, cm, c2 = ch[f], args[0], args[1]
             args = [c1, cm, c2, *args[2:]]
