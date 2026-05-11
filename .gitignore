@@ -157,3 +157,7 @@ docker_deploy.bat
 docker_deploy.sh
 Dockerfile.web
 start_docker.bat
+
+*.bat
+*.ps1
+*.sh
