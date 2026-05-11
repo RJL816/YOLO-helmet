@@ -1,0 +1,43 @@
+# ====================================================================
+# 云视智盔 - Web 后端依赖配置
+# ====================================================================
+# 安装方式：
+#   pip install -r requirements_web.txt
+#   pip install -e .  # 安装自定义 ultralytics（包含 Wise-IoU 和 DySample）
+# ====================================================================
+
+# ------------------ Web 框架 ------------------
+fastapi>=0.111.0
+uvicorn[standard]>=0.29.0
+python-multipart>=0.0.9
+websockets>=12.0
+
+# ------------------ 数据库 ------------------
+sqlalchemy>=2.0.0
+
+# ------------------ AI/ML 核心依赖 ------------------
+# PyTorch 
+torch>=1.8.0,!=2.4.0; sys_platform == 'win32'
+torch>=1.8.0; sys_platform != 'win32'
+torchvision>=0.9.0
+
+# 数值计算与图像处理
+numpy>=1.23.0,<=2.1.1
+opencv-python>=4.6.0
+pillow>=7.1.2
+
+# ------------------ 目标跟踪 ------------------
+lap>=0.5.12
+scipy>=1.4.1
+
+# ------------------ 工具库 ------------------
+pyyaml>=5.3.1
+requests>=2.23.0
+tqdm>=4.64.0
+psutil
+py-cpuinfo
+
+# ------------------ 可选：GPU 加速 ------------------
+# 如果有 NVIDIA GPU，取消下面的注释并安装 CUDA 版本
+# torch>=2.0.0+cu118 --extra-index-url https://download.pytorch.org/whl/cu118
+# torchvision>=0.15.0+cu118 --extra-index-url https://download.pytorch.org/whl/cu118

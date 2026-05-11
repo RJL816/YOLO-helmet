@@ -1,12 +1,18 @@
+import sys
+sys.path.insert(0, 'E:/Desktop/yolo/HelmetDetect')  # 添加项目目录到 sys.path 优先级
+
 import cv2
 from ultralytics import YOLO
 import time
 import numpy as np
-
+#v2:0.49543
+#v3:0.46219
+#v4:0.52185
+#wiseIou：0.52704
+#wiseIou-DySample：0.52863
 # --- 1. 配置区域  ---
-
 # 1.1) 你的模型路径
-MODEL_PATH = 'E:/Desktop/yolo/HelmetDetect/my_baseTraining_runs/helmet_baselineV4/weights/best.pt'  # 替换为你的 .pt 文件路径
+MODEL_PATH = 'E:/Desktop/yolo/HelmetDetect/my_baseTraining_runs/WiseIou_DySample150_Pretrained/weights/best.pt'  # 替换为你的 .pt 文件路径
 
 # 1.2) 输入视频路径 (或摄像头)
 VIDEO_SOURCE_PATH = 'E:/Desktop/yolo/HelmetDetect/mycode/video/video1.mp4'  # 替换为你的输入视频路径

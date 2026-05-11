@@ -1,0 +1,708 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>智能头盔检测监控大屏</title>
+
+  <!-- CDN: Vue3 + Element Plus + ECharts (bootcdn国内镜像 + unpkg备用) -->
+  <link rel="stylesheet" href="https://cdn.bootcdn.net/ajax/libs/element-plus/2.7.2/index.css"
+        onerror="this.href='https://unpkg.com/element-plus@2.7.2/dist/index.css'" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #030d1a; color: #c8d8ef;
+      font-family: 'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+      height: 100vh; overflow: hidden; display: flex; flex-direction: column;
+    }
+    /* -- header -- */
+    .header {
+      height: 56px;
+      background: linear-gradient(135deg, #061628, #0b2645);
+      border-bottom: 1px solid #1a3a5c;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0; position: relative;
+    }
+    .header h1 {
+      font-size: 22px; font-weight: 700; letter-spacing: 4px;
+      background: linear-gradient(90deg,#4fc3f7,#29b6f6,#81d4fa);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    }
+    .header .time-badge { position:absolute; right:24px; font-size:13px; color:#4fc3f7; opacity:.8; }
+    .header .status-dot { position:absolute; left:24px; display:flex; align-items:center; gap:6px; font-size:13px; }
+    .dot { width:8px;height:8px;border-radius:50%;background:#4caf50;box-shadow:0 0 8px #4caf50;animation:pulse 1.5s infinite; }
+    .dot.off { background:#607d8b;box-shadow:none;animation:none; }
+    @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+    /* -- main grid -- */
+    .main { flex:1; display:grid; grid-template-columns:1fr 380px; gap:14px; padding:14px; overflow:hidden; min-height:0; }
+    .card {
+      background: linear-gradient(145deg,#071a2e,#0d2440);
+      border:1px solid #1a3a5c; border-radius:10px; padding:14px;
+      display:flex; flex-direction:column; overflow:hidden;
+    }
+    .card-title { font-size:13px;color:#4fc3f7;letter-spacing:2px;border-left:3px solid #29b6f6;padding-left:8px;margin-bottom:12px;flex-shrink:0; }
+
+    /* -- video area -- */
+    .video-card { position:relative; }
+    .video-wrap { flex:1;display:flex;align-items:center;justify-content:center;background:#000;border-radius:6px;overflow:hidden;min-height:0; }
+    .video-wrap img { max-width:100%;max-height:100%;object-fit:contain;display:block; }
+    .video-ph { color:#3a5a7a;font-size:14px;text-align:center; }
+    .video-ph .ico { font-size:48px;margin-bottom:8px; }
+
+    /* -- controls -- */
+    .ctrls { display:flex;gap:10px;margin-top:12px;flex-wrap:wrap;flex-shrink:0; }
+    .ctrls button, .ctrls .upload-box { flex:1;min-width:120px; }
+    .btn {
+      display:inline-flex;align-items:center;justify-content:center;gap:6px;
+      height:36px;border:1px solid #1a3a5c;border-radius:6px;cursor:pointer;
+      font-size:13px;color:#c8d8ef;padding:0 16px;transition:all .2s;
+    }
+    .btn:hover { filter:brightness(1.25); }
+    .btn-primary   { background:#0d47a1;border-color:#1565c0; }
+    .btn-warning   { background:#e65100;border-color:#ef6c00; }
+    .btn-danger    { background:#b71c1c;border-color:#c62828; }
+    .btn-success   { background:#1b5e20;border-color:#2e7d32; }
+    .btn:disabled  { opacity:.4;cursor:not-allowed; }
+    .upload-box { position:relative;overflow:hidden; }
+    .upload-box input[type=file] { position:absolute;inset:0;opacity:0;cursor:pointer; }
+
+    /* -- right panel -- */
+    .right-panel { display:flex;flex-direction:column;gap:14px;overflow-y:auto;overflow-x:hidden;min-height:0; }
+    .right-panel::-webkit-scrollbar { width:4px; }
+    .right-panel::-webkit-scrollbar-thumb { background:#1a3a5c;border-radius:2px; }
+    .right-panel::-webkit-scrollbar-track { background:transparent; }
+    .alarm-card { flex-shrink:0; }
+    .alarm-grid { display:grid;grid-template-columns:1fr 1fr;gap:10px; }
+    .alarm-item { background:#041020;border-radius:8px;padding:16px 10px 12px;text-align:center;border:1px solid transparent;transition:border-color .3s; }
+    .alarm-item.danger  { border-color:#f44336;box-shadow:0 0 16px rgba(244,67,54,.15); }
+    .alarm-item.success { border-color:#4caf50;box-shadow:0 0 16px rgba(76,175,80,.1); }
+    .alarm-item .val { font-size:48px;font-weight:800;line-height:1;margin-bottom:6px; }
+    .alarm-item.danger  .val { color:#f44336;text-shadow:0 0 20px rgba(244,67,54,.6); }
+    .alarm-item.success .val { color:#4caf50;text-shadow:0 0 16px rgba(76,175,80,.4); }
+    .alarm-item .lbl { font-size:12px;color:#7a9ab8;letter-spacing:1px; }
+    @keyframes alarm-flash { 0%,100%{background:#041020} 50%{background:rgba(244,67,54,.07)} }
+    .alarm-item.flash { animation:alarm-flash .6s ease 3; }
+
+    /* -- progress bar -- */
+    .progress-bar { height:8px;border-radius:4px;background:#0a1a2e;overflow:hidden;margin-top:4px; }
+    .progress-fill { height:100%;border-radius:4px;transition:width .4s,background .4s; }
+
+    /* -- chart -- */
+    .chart-card { flex-shrink:0;min-height:220px; }
+    #helmet-chart { width:100%;height:200px; }
+
+    /* -- violation list -- */
+    .vio-card { flex-shrink:0;max-height:320px;display:flex;flex-direction:column; }
+    .vio-list { overflow-y:auto;flex:1;min-height:0; }
+    .vio-list::-webkit-scrollbar { width:3px; }
+    .vio-list::-webkit-scrollbar-thumb { background:#1a3a5c;border-radius:2px; }
+    .vio-item { display:flex;align-items:center;gap:10px;padding:10px 8px;border-bottom:1px solid #0d2440;transition:background .2s; }
+    .vio-item:hover { background:#0a1a30; }
+    .vio-thumb { width:90px;height:60px;border-radius:4px;object-fit:cover;border:1px solid #1a3a5c;flex-shrink:0;cursor:pointer;transition:border-color .2s; }
+    .vio-thumb:hover { border-color:#4fc3f7; }
+    .vio-info { flex:1;min-width:0; }
+    .vio-info .vio-time { font-size:11px;color:#5a7a9a; }
+    .vio-info .vio-detail { font-size:12px;color:#c8d8ef;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+    .vio-badge { font-size:10px;padding:2px 6px;border-radius:3px;flex-shrink:0; }
+    .vio-badge.pending   { background:#e65100;color:#fff; }
+    .vio-badge.confirmed { background:#b71c1c;color:#fff; }
+    .vio-badge.dismissed { background:#37474f;color:#aaa; }
+    .vio-actions { display:flex;gap:4px;flex-shrink:0; }
+    .vio-btn { font-size:11px;padding:3px 8px;border-radius:3px;border:1px solid #1a3a5c;background:transparent;color:#7a9ab8;cursor:pointer; }
+    .vio-btn:hover { background:#1a3a5c;color:#fff; }
+    .vio-empty { text-align:center;padding:20px;color:#3a5a7a;font-size:13px; }
+
+    /* -- image preview modal -- */
+    .preview-mask { position:fixed;inset:0;background:rgba(0,0,0,.85);z-index:10000;display:flex;align-items:center;justify-content:center;cursor:pointer; }
+    .preview-mask img { max-width:90vw;max-height:85vh;object-fit:contain;border-radius:8px;border:2px solid #1a3a5c;box-shadow:0 0 40px rgba(0,0,0,.6); }
+    .preview-close { position:fixed;top:18px;right:24px;z-index:10001;font-size:28px;color:#aaa;cursor:pointer;background:rgba(0,0,0,.5);width:40px;height:40px;border-radius:50%;display:flex;align-items:center;justify-content:center;border:1px solid #333; }
+    .preview-close:hover { color:#fff;background:rgba(244,67,54,.6); }
+    .preview-info { position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:10001;background:rgba(13,36,64,.9);padding:8px 24px;border-radius:6px;font-size:13px;color:#c8d8ef;border:1px solid #1a3a5c; }
+
+    /* -- hard example card -- */
+    .he-card { flex-shrink:0; }
+    .he-stats { display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px; }
+    .he-stat { background:#041020;border-radius:6px;padding:10px 8px;text-align:center; }
+    .he-stat .he-val { font-size:24px;font-weight:700;color:#ff9800; }
+    .he-stat .he-lbl { font-size:10px;color:#5a7a9a;margin-top:2px; }
+    .btn-sm { height:28px;font-size:11px;padding:0 12px; }
+
+    /* -- tags -- */
+    .tag { display:inline-block;padding:2px 10px;border-radius:4px;font-size:12px;background:#0a2a4a;color:#6ab0e4;cursor:pointer;margin:3px;border:1px solid #1a3a5c; }
+    .tag:hover { background:#1565c0; }
+
+    /* -- upload mask -- */
+    .mask { position:absolute;inset:0;background:rgba(3,13,26,.85);display:flex;align-items:center;justify-content:center;border-radius:10px;z-index:10;font-size:15px;color:#4fc3f7; }
+
+    /* -- toast -- */
+    .toast-wrap { position:fixed;top:70px;right:20px;z-index:9999;display:flex;flex-direction:column;gap:8px;max-height:180px;overflow:hidden;pointer-events:none; }
+    .toast { padding:10px 20px;border-radius:6px;font-size:13px;color:#fff;animation:fadeIn .3s;pointer-events:auto; }
+    .toast.ok  { background:rgba(76,175,80,.9); }
+    .toast.err { background:rgba(244,67,54,.9); }
+    .toast.info { background:rgba(33,150,243,.9); }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(-10px)} to{opacity:1;transform:translateY(0)} }
+
+    @media (max-width:900px) { .main{grid-template-columns:1fr;overflow-y:auto;} body{overflow:auto;} }
+  </style>
+</head>
+<body>
+
+<div id="app" style="display:flex;flex-direction:column;height:100vh;">
+  <!-- === header === -->
+  <header class="header">
+    <div class="status-dot">
+      <span class="dot" :class="{off:!running}"></span>
+      <span v-text="running ? '\u63a8\u7406\u8fd0\u884c\u4e2d' : '\u672a\u542f\u52a8'"></span>
+    </div>
+    <h1>智能头盔检测监控大屏</h1>
+    <span class="time-badge" v-text="clock"></span>
+  </header>
+
+  <!-- === main === -->
+  <main class="main">
+    <!-- left: video -->
+    <div class="card video-card">
+      <div class="card-title">实时监控画面</div>
+      <div class="video-wrap">
+        <img v-if="running" :src="feedUrl" alt="stream" />
+        <div v-else class="video-ph">
+          <div class="ico">--</div>
+          <div>请上传视频或激活摄像头</div>
+          <div style="font-size:12px;margin-top:4px;color:#2a4a6a">启动推理后画面将显示于此</div>
+        </div>
+      </div>
+      <div class="ctrls">
+        <div class="upload-box btn btn-primary">
+          上传视频
+          <input type="file" accept="video/*" @change="onFileChange" :disabled="uploading" />
+        </div>
+        <button class="btn btn-warning" :disabled="running" @click="startCamera">激活摄像头</button>
+        <button class="btn btn-danger"  :disabled="!running" @click="stopInfer">停止推理</button>
+      </div>
+      <!-- uploaded list -->
+      <div v-if="videos.length" style="margin-top:10px">
+        <div class="card-title">已上传视频</div>
+        <div>
+          <span class="tag" v-for="v in videos" :key="v" @click="startFile(v)" v-text="v"></span>
+        </div>
+      </div>
+      <div v-if="uploading" class="mask">正在上传视频...</div>
+    </div>
+
+    <!-- right: data panel -->
+    <div class="right-panel">
+      <!-- alarm -->
+      <div class="card alarm-card">
+        <div class="card-title">实时安全警告</div>
+        <div class="alarm-grid">
+          <div class="alarm-item danger" :class="{flash:flashFlag}">
+            <div class="val" v-text="noHelmet"></div>
+            <div class="lbl">未佩戴头盔</div>
+          </div>
+          <div class="alarm-item success">
+            <div class="val" v-text="hasHelmet"></div>
+            <div class="lbl">已佩戴头盔</div>
+          </div>
+        </div>
+        <div style="margin-top:12px">
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:#5a7a9a;margin-bottom:4px">
+            <span>违规率</span>
+            <span v-text="rate + '%'"></span>
+          </div>
+          <div class="progress-bar">
+            <div class="progress-fill" :style="{width:rate+'%', background: rate>50?'#f44336':rate>20?'#ff9800':'#4caf50'}"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- violation records -->
+      <div class="card vio-card">
+        <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+          <span>违章抓拍记录</span>
+          <span style="font-size:11px;color:#5a7a9a" v-text="'共 ' + vioTotal + ' 条'"></span>
+        </div>
+        <div class="vio-list" v-if="violations.length">
+          <div class="vio-item" v-for="v in violations" :key="v.id">
+            <img class="vio-thumb" :src="'/api/violations/' + v.id + '/image'" alt="capture" loading="lazy" @click="previewVio=v" />
+            <div class="vio-info">
+              <div class="vio-time" v-text="v.timestamp"></div>
+              <div class="vio-detail" v-text="'ID' + v.tracker_id + ' conf=' + v.confidence.toFixed(2)"></div>
+              <div v-if="v.plate_text" style="font-size:10px;color:#ff9800" v-text="'车牌: ' + v.plate_text"></div>
+            </div>
+            <span class="vio-badge" :class="v.status" v-text="v.status === 'pending' ? '待确认' : v.status === 'confirmed' ? '已确认' : '已忽略'"></span>
+            <div class="vio-actions" v-if="v.status === 'pending'">
+              <button class="vio-btn" @click="confirmVio(v.id)" title="确认违章">V</button>
+              <button class="vio-btn" @click="dismissVio(v.id)" title="忽略">X</button>
+              <button class="vio-btn" @click="recognizeVio(v.id)" title="OCR识别">R</button>
+            </div>
+          </div>
+        </div>
+        <div v-else class="vio-empty">暂无违章记录</div>
+      </div>
+
+      <!-- hard examples -->
+      <div class="card he-card">
+        <div class="card-title">难例挖掘</div>
+        <div class="he-stats">
+          <div class="he-stat">
+            <div class="he-val" v-text="heStats.total"></div>
+            <div class="he-lbl">累计难例</div>
+          </div>
+          <div class="he-stat">
+            <div class="he-val" v-text="heStats.recent_24h"></div>
+            <div class="he-lbl">24h新增</div>
+          </div>
+          <div class="he-stat">
+            <div class="he-val" v-text="heStats.avg_conf.toFixed(2)"></div>
+            <div class="he-lbl">平均置信度</div>
+          </div>
+          <div class="he-stat">
+            <div class="he-val" v-text="heStats.disk_mb.toFixed(1) + 'M'"></div>
+            <div class="he-lbl">磁盘占用</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-success btn-sm" style="flex:1" @click="exportHard">导出训练集(zip)</button>
+          <button class="btn btn-primary btn-sm" style="flex:1" @click="refreshHeStats">刷新统计</button>
+        </div>
+      </div>
+
+      <!-- chart -->
+      <div class="card chart-card">
+        <div class="card-title">检测趋势图（实时）</div>
+        <div id="helmet-chart"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- image preview modal -->
+  <div v-if="previewVio" class="preview-mask" @click="previewVio=null">
+    <div class="preview-close" @click.stop="previewVio=null">X</div>
+    <img :src="'/api/violations/' + previewVio.id + '/image'" alt="preview" @click.stop />
+    <div class="preview-info" @click.stop>
+      <span v-text="previewVio.timestamp + '  |  ID' + previewVio.tracker_id + '  |  置信度 ' + previewVio.confidence.toFixed(3) + '  |  状态: ' + (previewVio.status==='pending'?'待确认':previewVio.status==='confirmed'?'已确认':'已忽略')"></span>
+    </div>
+  </div>
+
+  <!-- toast -->
+  <div class="toast-wrap">
+    <div v-for="(t,i) in toasts" :key="i" class="toast" :class="t.type" v-text="t.msg"></div>
+  </div>
+</div>
+
+<!-- === JS: 带 fallback 的 CDN 加载 === -->
+<script>
+  // CDN fallback loader
+  function loadScript(urls, cb) {
+    var i = 0;
+    function tryNext() {
+      if (i >= urls.length) { console.error('All CDN failed:', urls); cb && cb(false); return; }
+      var s = document.createElement('script');
+      s.src = urls[i]; i++;
+      s.onload = function(){ cb && cb(true); };
+      s.onerror = tryNext;
+      document.head.appendChild(s);
+    }
+    tryNext();
+  }
+  // 'sequential' loader: array of {urls, check}
+  function loadAll(list, done) {
+    var idx = 0;
+    function next() {
+      if (idx >= list.length) { done(); return; }
+      var item = list[idx]; idx++;
+      if (item.check && item.check()) { next(); return; }
+      loadScript(item.urls, function(ok){ next(); });
+    }
+    next();
+  }
+  loadAll([
+    {
+      urls: [
+        'https://cdn.bootcdn.net/ajax/libs/vue/3.4.21/vue.global.prod.min.js',
+        'https://unpkg.com/vue@3.4.21/dist/vue.global.prod.js',
+        'https://cdn.jsdelivr.net/npm/vue@3.4.21/dist/vue.global.prod.js'
+      ],
+      check: function(){ return typeof Vue !== 'undefined'; }
+    },
+    {
+      urls: [
+        'https://cdn.bootcdn.net/ajax/libs/element-plus/2.7.2/index.full.min.js',
+        'https://unpkg.com/element-plus@2.7.2/dist/index.full.min.js',
+        'https://cdn.jsdelivr.net/npm/element-plus@2.7.2/dist/index.full.min.js'
+      ],
+      check: function(){ return typeof ElementPlus !== 'undefined'; }
+    },
+    {
+      urls: [
+        'https://cdn.bootcdn.net/ajax/libs/echarts/5.5.0/echarts.min.js',
+        'https://unpkg.com/echarts@5.5.0/dist/echarts.min.js',
+        'https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js'
+      ],
+      check: function(){ return typeof echarts !== 'undefined'; }
+    }
+  ], initApp);
+
+  function initApp() {
+    // guard
+    if (typeof Vue === 'undefined') {
+      document.getElementById('app').innerHTML = '<h2 style="color:red;text-align:center;margin-top:40vh">CDN 加载失败，请检查网络后刷新页面</h2>';
+      return;
+    }
+
+    var createApp  = Vue.createApp;
+    var ref        = Vue.ref;
+    var computed   = Vue.computed;
+    var onMounted  = Vue.onMounted;
+    var onUnmounted= Vue.onUnmounted;
+    var nextTick   = Vue.nextTick;
+
+    var vueApp = createApp({
+      setup: function() {
+        // ---- state ----
+        var running    = ref(false);
+        var uploading  = ref(false);
+        var videos     = ref([]);
+        var flashFlag  = ref(false);
+        var noHelmet   = ref(0);
+        var hasHelmet  = ref(0);
+        var clock      = ref('');
+        var toasts     = ref([]);
+
+        // violation state
+        var violations = ref([]);
+        var vioTotal   = ref(0);
+        var previewVio = ref(null);
+        var lastVioToastTime = 0;  // debounce violation toasts
+
+        // hard example state
+        var heStats = ref({total:0, recent_24h:0, avg_conf:0, disk_mb:0});
+
+        var MAX_POINTS = 30;
+        var chartTimes   = [];
+        var chartWithout = [];
+        var chartWith    = [];
+        var chart   = null;
+        var wsConn  = null;
+        var clockId = null;
+
+        // video feed URL
+        var feedUrl = computed(function() {
+          return '/api/video-feed?t=' + Date.now();
+        });
+
+        // violation rate
+        var rate = computed(function() {
+          var total = noHelmet.value + hasHelmet.value;
+          if (!total) return 0;
+          return Math.round((noHelmet.value / total) * 100);
+        });
+
+        // ---- toast ----
+        function toast(msg, type) {
+          type = type || 'info';
+          // limit max visible toasts to 3
+          while (toasts.value.length >= 3) { toasts.value.shift(); }
+          var obj = {msg: msg, type: type};
+          toasts.value.push(obj);
+          setTimeout(function(){ var idx = toasts.value.indexOf(obj); if(idx>=0) toasts.value.splice(idx,1); }, 3000);
+        }
+
+        // ---- chart ----
+        function initChart() {
+          var el = document.getElementById('helmet-chart');
+          if (!el || typeof echarts === 'undefined') return;
+          chart = echarts.init(el, 'dark');
+          chart.setOption({
+            backgroundColor: 'transparent',
+            tooltip: { trigger:'axis', backgroundColor:'#0d2440', borderColor:'#1a3a5c', textStyle:{color:'#c8d8ef',fontSize:12} },
+            legend: { data:['未戴头盔','已戴头盔'], textStyle:{color:'#7a9ab8',fontSize:11}, top:4, right:10 },
+            grid: { left:40, right:14, top:36, bottom:30 },
+            xAxis: {
+              type:'category', data: chartTimes,
+              axisLine:{lineStyle:{color:'#1a3a5c'}}, axisLabel:{color:'#5a7a9a',fontSize:10,rotate:30},
+              boundaryGap: false
+            },
+            yAxis: {
+              type:'value', minInterval:1,
+              axisLine:{lineStyle:{color:'#1a3a5c'}}, axisLabel:{color:'#5a7a9a',fontSize:10},
+              splitLine:{lineStyle:{color:'#0d2440'}}
+            },
+            series:[
+              {
+                name:'未戴头盔', type:'line', data:chartWithout, smooth:true, symbol:'circle', symbolSize:4,
+                lineStyle:{color:'#f44336',width:2}, itemStyle:{color:'#f44336'},
+                areaStyle:{ color:{type:'linear',x:0,y:0,x2:0,y2:1, colorStops:[{offset:0,color:'rgba(244,67,54,0.3)'},{offset:1,color:'rgba(244,67,54,0.02)'}]} }
+              },
+              {
+                name:'已戴头盔', type:'line', data:chartWith, smooth:true, symbol:'circle', symbolSize:4,
+                lineStyle:{color:'#4caf50',width:2}, itemStyle:{color:'#4caf50'},
+                areaStyle:{ color:{type:'linear',x:0,y:0,x2:0,y2:1, colorStops:[{offset:0,color:'rgba(76,175,80,0.25)'},{offset:1,color:'rgba(76,175,80,0.02)'}]} }
+              }
+            ]
+          });
+        }
+
+        function refreshChart() {
+          if (!chart) return;
+          chart.setOption({
+            xAxis:{ data: chartTimes },
+            series:[{ data: chartWithout },{ data: chartWith }]
+          });
+        }
+
+        function pushPoint(ts, w, h) {
+          chartTimes.push(ts);
+          chartWithout.push(w);
+          chartWith.push(h);
+          if (chartTimes.length > MAX_POINTS) { chartTimes.shift(); chartWithout.shift(); chartWith.shift(); }
+          refreshChart();
+        }
+
+        // ---- websocket ----
+        function connectWS() {
+          if (wsConn && wsConn.readyState <= 1) return;
+          var proto = location.protocol === 'https:' ? 'wss' : 'ws';
+          wsConn = new WebSocket(proto + '://' + location.host + '/ws/detections');
+          wsConn.onopen = function(){ console.log('[WS] connected'); };
+          wsConn.onmessage = function(evt) {
+            try {
+              var d = JSON.parse(evt.data);
+              // 违章抓拍事件
+              if (d.event === 'violation') {
+                var nowMs = Date.now();
+                if (nowMs - lastVioToastTime > 5000) {
+                  lastVioToastTime = nowMs;
+                  toast('违章抓拍! ID' + d.tracker_id, 'err');
+                }
+                fetchViolations();
+                return;
+              }
+              // 常规检测数据
+              var prev = noHelmet.value;
+              noHelmet.value  = d.without_helmet;
+              hasHelmet.value = d.with_helmet;
+              if (d.without_helmet > 0 && d.without_helmet !== prev) {
+                flashFlag.value = false;
+                nextTick(function(){ flashFlag.value = true; });
+                setTimeout(function(){ flashFlag.value = false; }, 2000);
+              }
+              pushPoint(d.timestamp, d.without_helmet, d.with_helmet);
+            } catch(e){ console.warn('[WS] parse error', e); }
+          };
+          wsConn.onclose = function() {
+            console.log('[WS] closed');
+            setTimeout(function(){ if(running.value) connectWS(); }, 3000);
+          };
+          wsConn.onerror = function(){ try{wsConn.close();}catch(e){} };
+        }
+
+        // ---- API helpers ----
+        function apiPost(url) {
+          return fetch(url, {method:'POST'}).then(function(r){ return r.json(); });
+        }
+
+        function startCamera() {
+          apiPost('/api/start-inference?source=camera').then(function(d) {
+            running.value = true; connectWS();
+            toast('摄像头推理已启动', 'ok');
+          }).catch(function(e){ toast('网络错误: '+e.message, 'err'); });
+        }
+
+        function startFile(filename) {
+          if (running.value) {
+            // stop first, then start new
+            apiPost('/api/stop-inference').then(function(){
+              running.value = false;
+              setTimeout(function(){ doStartFile(filename); }, 500);
+            });
+          } else {
+            doStartFile(filename);
+          }
+        }
+
+        function doStartFile(filename) {
+          apiPost('/api/start-inference?source=' + encodeURIComponent(filename)).then(function(d) {
+            running.value = true; connectWS();
+            toast('视频推理已启动: ' + filename, 'ok');
+          }).catch(function(e){ toast('网络错误: '+e.message, 'err'); });
+        }
+
+        function stopInfer() {
+          apiPost('/api/stop-inference').then(function() {
+            running.value = false;
+            if (wsConn) { wsConn.onclose=null; try{wsConn.close();}catch(e){} }
+            noHelmet.value = 0; hasHelmet.value = 0;
+            toast('推理已停止', 'info');
+          }).catch(function(e){ toast('网络错误: '+e.message, 'err'); });
+        }
+
+        // ---- file upload ----
+        function onFileChange(ev) {
+          var file = ev.target.files && ev.target.files[0];
+          if (!file) return;
+          if (!file.type.startsWith('video/')) { toast('请选择视频文件','err'); return; }
+          uploading.value = true;
+          var fd = new FormData();
+          fd.append('file', file);
+          fetch('/api/upload-video', {method:'POST', body:fd})
+            .then(function(r){ return r.json(); })
+            .then(function(d){
+              uploading.value = false;
+              toast('上传成功: ' + d.filename, 'ok');
+              fetchVideos();
+              startFile(d.filename);
+            })
+            .catch(function(e){
+              uploading.value = false;
+              toast('上传失败: '+e.message, 'err');
+            });
+          ev.target.value = ''; // reset input
+        }
+
+        function fetchVideos() {
+          fetch('/api/videos').then(function(r){ return r.json(); })
+            .then(function(d){ videos.value = d.videos || []; })
+            .catch(function(){});
+        }
+
+        function loadHistory() {
+          fetch('/api/history?minutes=5').then(function(r){return r.json();})
+            .then(function(d){
+              if (d.data && d.data.length) {
+                d.data.forEach(function(item){ pushPoint(item.timestamp, item.without_helmet, item.with_helmet); });
+                var last = d.data[d.data.length-1];
+                noHelmet.value  = last.without_helmet;
+                hasHelmet.value = last.with_helmet;
+              }
+            })
+            .catch(function(){});
+        }
+
+        function syncStatus() {
+          fetch('/api/status').then(function(r){return r.json();})
+            .then(function(d){
+              if (d.running) {
+                running.value = true;
+                noHelmet.value  = d.without_helmet;
+                hasHelmet.value = d.with_helmet;
+                connectWS();
+              }
+            })
+            .catch(function(){});
+        }
+
+        // ---- violation helpers ----
+        function fetchViolations() {
+          fetch('/api/violations?limit=30').then(function(r){return r.json();})
+            .then(function(d){
+              violations.value = d.data || [];
+              vioTotal.value   = d.total || 0;
+            })
+            .catch(function(){});
+        }
+
+        function confirmVio(vid) {
+          fetch('/api/violations/' + vid + '/status?new_status=confirmed', {method:'PUT'})
+            .then(function(r){return r.json();})
+            .then(function(){ toast('违章已确认', 'ok'); fetchViolations(); })
+            .catch(function(e){ toast('操作失败: '+e.message, 'err'); });
+        }
+
+        function dismissVio(vid) {
+          fetch('/api/violations/' + vid + '/status?new_status=dismissed', {method:'PUT'})
+            .then(function(r){return r.json();})
+            .then(function(){ toast('记录已忽略', 'info'); fetchViolations(); })
+            .catch(function(e){ toast('操作失败: '+e.message, 'err'); });
+        }
+
+        function recognizeVio(vid) {
+          toast('正在识别...', 'info');
+          fetch('/api/violations/' + vid + '/recognize', {method:'POST'})
+            .then(function(r){return r.json();})
+            .then(function(d){
+              toast('识别完成: 车牌=' + (d.plate_text||'-') + ', 人脸=' + (d.face_id||'-'), 'ok');
+              fetchViolations();
+            })
+            .catch(function(e){ toast('识别失败: '+e.message, 'err'); });
+        }
+
+        // ---- hard example helpers ----
+        function refreshHeStats() {
+          fetch('/api/hard-examples/stats').then(function(r){return r.json();})
+            .then(function(d){ heStats.value = d; })
+            .catch(function(){});
+        }
+
+        function exportHard() {
+          toast('正在打包导出...', 'info');
+          fetch('/api/hard-examples/export', {method:'POST'})
+            .then(function(r){
+              if (!r.ok) throw new Error('导出失败(HTTP ' + r.status + ')');
+              return r.blob();
+            })
+            .then(function(blob){
+              var url = URL.createObjectURL(blob);
+              var a = document.createElement('a');
+              a.href = url;
+              a.download = 'hard_examples.zip';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(url);
+              toast('导出成功', 'ok');
+            })
+            .catch(function(e){ toast('导出失败: '+e.message, 'err'); });
+        }
+
+        function startClock() {
+          function tick(){ clock.value = new Date().toLocaleTimeString('zh-CN',{hour12:false}); }
+          tick(); clockId = setInterval(tick, 1000);
+        }
+
+        // ---- lifecycle ----
+        onMounted(function() {
+          startClock();
+          nextTick(function(){
+            initChart();
+            window.addEventListener('resize', function(){ if(chart) chart.resize(); });
+          });
+          fetchVideos();
+          loadHistory();
+          syncStatus();
+          fetchViolations();
+          refreshHeStats();
+        });
+
+        onUnmounted(function() {
+          clearInterval(clockId);
+          if(wsConn) try{wsConn.close();}catch(e){}
+          if(chart) chart.dispose();
+        });
+
+        return {
+          running: running, uploading: uploading, videos: videos,
+          flashFlag: flashFlag, noHelmet: noHelmet, hasHelmet: hasHelmet,
+          clock: clock, feedUrl: feedUrl, rate: rate, toasts: toasts,
+          violations: violations, vioTotal: vioTotal, previewVio: previewVio, heStats: heStats,
+          startCamera: startCamera, startFile: startFile, stopInfer: stopInfer,
+          onFileChange: onFileChange,
+          confirmVio: confirmVio, dismissVio: dismissVio, recognizeVio: recognizeVio,
+          refreshHeStats: refreshHeStats, exportHard: exportHard
+        };
+      }
+    });
+
+    // Element Plus (optional enhance)
+    if (typeof ElementPlus !== 'undefined') {
+      vueApp.use(ElementPlus);
+    }
+
+    vueApp.mount('#app');
+    console.log('[App] Vue mounted successfully');
+  }
+</script>
+</body>
+</html>

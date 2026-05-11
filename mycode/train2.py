@@ -1,102 +1,211 @@
 import sys
 from pathlib import Path
 
-# 获取当前脚本所在目录：/tmp/pycharm_project_601/mycode
-# 上两级就是项目根目录：/tmp/pycharm_project_601
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
-
-# 把项目根目录插入到 sys.path 最前面（优先于 site-packages）
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 print(f"Using project root: {PROJECT_ROOT}")
 
-
-
 import os
-import torch
-from ultralytics import YOLO
-from datetime import datetime
 import multiprocessing
-from pathlib import Path
-#V2best
-def main():
-    # ===================== 基本配置 =====================
-    # 获取当前脚本的绝对路径
+from ultralytics import YOLO
+
+# ============================================================
+# MODE 切换（改这一行，然后运行脚本）：
+#
+#   "baseline"      → 原版 YOLO11n（CIoU + nn.Upsample）      ← 消融第1行 (100轮)
+#   "wiou_only"     → YOLO11n + WIoU，无 DySample              ← 消融第2行 (100轮)
+#   "dysample_only" → YOLO11n + DySample，无 WIoU（CIoU）       ← 消融第3行 (150轮)
+#   "improved"      → YOLO11n + WIoU + DySample（完整改进）    ← 消融第4行 (150轮)
+#
+# 消融实验运行顺序建议：
+#   baseline → wiou_only → dysample_only → improved
+#
+# 注意：含 DySample 的版本训练 150 轮（随机初始化需更多时间收敛）
+#       原版结构的版本训练 100 轮即可
+# ============================================================
+MODE = "wiou_only"
+
+
+def get_common_cfg():
     FILE = Path(__file__).resolve()
-    ROOT = FILE.parents[1]  # HelmetDetect/
-    model_cfg = ROOT / "ultralytics/cfg/models/11/yolo11.yaml"
-    data_yaml = ROOT / "datasets/data.yaml"
-    epochs = 100
-    batch_size = 16
-    imgsz = 640
-    device = 0
+    ROOT = FILE.parents[1]
+    return dict(
+        ROOT=ROOT,
+        data_yaml=ROOT / "datasets/data.yaml",
+        project_dir=ROOT / "my_baseTraining_runs",
+        batch_size=16,
+        imgsz=640,
+        device=0,
+    )
 
-    # ===================== 自定义训练名称和项目路径 =====================
 
-    # 1. 自定义项目根目录，所有训练都会保存在这里
-    #    如果注释掉下面这行，YOLO会使用默认的 'runs/detect'
-    custom_project_dir = ROOT / "my_baseTraining_runs"
+def train_improved():
+    """改进版：YOLO11n + WIoU + DySample，从 yolo11n.pt 迁移预训练权重"""
+    cfg = get_common_cfg()
+    ROOT = cfg["ROOT"]
 
-    # 2. 自定义本次实验的名称
-    #timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    custom_experiment_name = "WiseIou_DySample_DCNV2"
+    custom_yaml = ROOT / "ultralytics/cfg/models/11/yolo11.yaml"
+    pretrain_pt = ROOT / "mycode/yolo11n.pt"
 
-    model = YOLO(model_cfg)
+    model = YOLO(str(custom_yaml))
+    model.load(str(pretrain_pt))
 
-    print(f"开始训练，本次实验名称：{custom_experiment_name}")
+    print("=" * 60)
+    print("  模式：改进版（WIoU + DySample）- 150轮")
+    print("=" * 60)
 
     try:
         results = model.train(
-            data=data_yaml,
-            epochs=epochs,
-            imgsz=imgsz,
-            batch=batch_size,
-            device=device,
-
-            project=custom_project_dir,  # 告诉YOLO总的保存位置
-            name=custom_experiment_name,  # 告诉YOLO本次训练的文件夹名
-
-
-            plots=True,  # 开启图片生成（您已经做对了）
-            verbose=True,
-            exist_ok=True,  # 如果 'name' 目录已存在，则覆盖
+            data=cfg["data_yaml"],
+            epochs=150,
+            imgsz=cfg["imgsz"],
+            batch=cfg["batch_size"],
+            device=cfg["device"],
+            project=cfg["project_dir"],
+            name="WiseIou_DySample150_Pretrained",
+            exist_ok=True,
             resume=False,
-            amp=False,  # <--- 关闭混合精度，使用全精度训练（更稳定）
-            workers=0,  # <--- 建议设为0，防止多进程导致的数据加载崩溃
-
-            # # --- 强效增强：解决“框不准”和“过拟合” ---
-            # degrees = 15,  # 随机旋转 +/- 15 度
-            # translate = 0.2,  # 随机平移 +/- 20%
-            # scale = 0.5,  # 随机缩放 +/- 50% (这是关键！)
-            # shear = 10,  # 随机剪切 +/- 10 度
-            # perspective = 0.001,
-            #
-            #     # --- 强效增强：丰富背景，抗过拟合 ---
-            # copy_paste = 0.1  # 10% 概率从其他图片复制物体粘贴过来
-
+            plots=True,
+            verbose=True,
+            amp=True,
+            workers=2,
         )
-
+        print(f"\n结果保存至：{results.save_dir}")
     except Exception as e:
         print(f"训练过程异常: {e}")
-        return
 
-    save_dir = results.save_dir  # 这就是 YOLO 自动生成的目录，例如: E:/Desktop/yolo/HelmetDetect/my_training_runs/train_20251112_133000
 
-    print("\n" + "=" * 60)
-    print("所有任务完成！")
-    print(f"1. 权重、图片和日志均保存在一个地方：\n   {save_dir}")
+def train_baseline():
+    """原版基线：标准 YOLO11n（CIoU + nn.Upsample），直接 finetune yolo11n.pt
+    与改进版参数量相同，起点相同，公平对比。
 
-    print(f"\n2. 权重文件位于：\n   {os.path.join(save_dir, 'weights', 'best.pt')}")
+    重要说明：虽然使用官方 yolo11n.pt（其预训练时用的是 CIoU），
+    但本代码已修改 loss.py 添加了 WIoU，且默认值是 USE_WIOU='1'。
+    因此必须显式设置 USE_WIOU='0' 才能使用标准 CIoU 作为基线。
+    """
+    cfg = get_common_cfg()
+    ROOT = cfg["ROOT"]
+    pretrain_pt = ROOT / "mycode/yolo11n.pt"
 
-    print(f"\n3. 所有图片 (PR_curve等) 位于：\n   {save_dir}")
+    model = YOLO(str(pretrain_pt))   # 原版结构 + 完整预训练权重
 
-    print(f"\n4. 完整的 TensorBoard 日志位于（它记录了所有epoch）：\n   {save_dir}")
-    print(f"   请使用此命令查看：")
-    print(f"   tensorboard --logdir=\"{save_dir}\"")
     print("=" * 60)
+    print("  模式：原版 YOLO11n 基线（CIoU + nn.Upsample）")
+    print("=" * 60)
+
+    try:
+        os.environ['USE_WIOU'] = '0'   # 关闭 WIoU，回退标准 CIoU
+        results = model.train(
+            data=cfg["data_yaml"],
+            epochs=100,
+            imgsz=cfg["imgsz"],
+            batch=cfg["batch_size"],
+            device=cfg["device"],
+            project=cfg["project_dir"],
+            name="yolo11n_baseline",
+            exist_ok=True,
+            resume=False,
+            plots=True,
+            verbose=True,
+            amp=True,
+            workers=2,
+        )
+        print(f"\n结果保存至：{results.save_dir}")
+    except Exception as e:
+        print(f"训练过程异常: {e}")
+    finally:
+        os.environ['USE_WIOU'] = '1'   # 恢复默认
+
+
+def train_wiou_only():
+    """消融：YOLO11n + WIoU，保留原版 nn.Upsample，不用 DySample。
+    使用原版 yolo11n.pt（无 DySample 层），直接加载全部预训练权重。
+    USE_WIOU=1（默认），只改 loss，不改上采样结构。
+    """
+    cfg = get_common_cfg()
+    ROOT = cfg["ROOT"]
+    pretrain_pt = ROOT / "mycode/yolo11n.pt"
+
+    # 原版结构（无 DySample），USE_WIOU 保持默认 '1'
+    os.environ['USE_WIOU'] = '1'
+    model = YOLO(str(pretrain_pt))
+
+    print("=" * 60)
+    print("  模式：消融 - 仅 WIoU（原版 Upsample，无 DySample）- 100轮")
+    print("=" * 60)
+
+    try:
+        results = model.train(
+            data=cfg["data_yaml"],
+            epochs=100,
+            imgsz=cfg["imgsz"],
+            batch=cfg["batch_size"],
+            device=cfg["device"],
+            project=cfg["project_dir"],
+            name="ablation_wiou_only",
+            exist_ok=True,
+            resume=False,
+            plots=True,
+            verbose=True,
+            amp=True,
+            workers=2,
+        )
+        print(f"\n结果保存至：{results.save_dir}")
+    except Exception as e:
+        print(f"训练过程异常: {e}")
+
+
+def train_dysample_only():
+    """消融：YOLO11n + DySample，使用 CIoU（不用 WIoU）。
+    使用自定义 yaml（含 DySample），但 loss 回退 CIoU。
+    """
+    cfg = get_common_cfg()
+    ROOT = cfg["ROOT"]
+    custom_yaml = ROOT / "ultralytics/cfg/models/11/yolo11.yaml"
+    pretrain_pt = ROOT / "mycode/yolo11n.pt"
+
+    os.environ['USE_WIOU'] = '0'   # 关闭 WIoU，只让 DySample 起作用
+    model = YOLO(str(custom_yaml))
+    model.load(str(pretrain_pt))
+
+    print("=" * 60)
+    print("  模式：消融 - 仅 DySample（CIoU，无 WIoU）- 150轮")
+    print("=" * 60)
+
+    try:
+        results = model.train(
+            data=cfg["data_yaml"],
+            epochs=150,
+            imgsz=cfg["imgsz"],
+            batch=cfg["batch_size"],
+            device=cfg["device"],
+            project=cfg["project_dir"],
+            name="ablation_dysample_only",
+            exist_ok=True,
+            resume=False,
+            plots=True,
+            verbose=True,
+            amp=True,
+            workers=2,
+        )
+        print(f"\n结果保存至：{results.save_dir}")
+    except Exception as e:
+        print(f"训练过程异常: {e}")
+    finally:
+        os.environ['USE_WIOU'] = '1'
 
 
 if __name__ == "__main__":
     multiprocessing.freeze_support()
-    main()
+    if MODE == "improved":
+        train_improved()
+    elif MODE == "baseline":
+        train_baseline()
+    elif MODE == "wiou_only":
+        train_wiou_only()
+    elif MODE == "dysample_only":
+        train_dysample_only()
+    else:
+        raise ValueError(f"未知 MODE: {MODE}")

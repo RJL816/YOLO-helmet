@@ -26,10 +26,52 @@ ENV/
 *.swo
 .DS_Store
 
-# Project specific
+# Git
+.git
+.gitignore
+
+# Docker (don't copy docker context into image)
+docker/
+.dockerignore
+
+# Docs & CI
+docs/
+tests/
+examples/
+.github/
+mkdocs.yml
+CONTRIBUTING.md
+CITATION.cff
+
+# Training runs (keep only WiseIou_DySampleV1/weights)
+my_baseTraining_runs/helmet_baseline/
+my_baseTraining_runs/helmet_baselineV2/
+my_baseTraining_runs/helmet_baselineV3/
+my_baseTraining_runs/helmet_baselineV4/
+my_baseTraining_runs/WiseIou_DySampleV1/train*
+my_baseTraining_runs/WiseIou_DySampleV1/*.csv
+my_baseTraining_runs/WiseIou_DySampleV1/*.png
+my_baseTraining_runs/WiseIou_DySample_DCNV1/
+my_baseTraining_runs/WiseIouV1/
+
+# Datasets (large, not needed at runtime)
+datasets/
+
+# Runtime data (created at container runtime)
+app/detections.db
+app/uploads/
+app/violations/
+app/hard_examples/
+
+# Large media files
+*.mp4
+*.avi
+*.mov
+mycode/video/
+mycode/photo/
+
+# Misc
 *.log
 benchmarks.log
 runs/
-
-# Dependencies
 node_modules/
